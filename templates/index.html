@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VPS Sentinel — Cyber Defense Dashboard</title>
+  <meta name="description" content="Real-time VPS cyber attack prevention and monitoring dashboard" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <!-- ── Threat Alert Popup ─────────────────────────────────── -->
+  <div id="alert-popup" class="alert-popup hidden">
+    <div class="alert-icon">⚡</div>
+    <div class="alert-body">
+      <div id="alert-title" class="alert-title">Ancaman Terdeteksi</div>
+      <div id="alert-detail" class="alert-detail"></div>
+    </div>
+    <button onclick="document.getElementById('alert-popup').classList.add('hidden')" class="alert-close">✕</button>
+  </div>
+
+  <!-- ── Sidebar ────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">🛡️</span>
+      <div>
+        <div class="logo-title">VPS Sentinel</div>
+        <div class="logo-sub">Cyber Defense System</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="#" class="nav-item active" onclick="switchTab('dashboard',this)" id="tab-btn-dashboard">
+        <span>📊</span> Dashboard
+      </a>
+      <a href="#" class="nav-item" onclick="switchTab('events',this)" id="tab-btn-events">
+        <span>⚠️</span> Live Events
+      </a>
+      <a href="#" class="nav-item" onclick="switchTab('blocked',this)" id="tab-btn-blocked">
+        <span>🚫</span> IP Diblokir
+      </a>
+      <a href="#" class="nav-item" onclick="switchTab('system',this)" id="tab-btn-system">
+        <span>💻</span> Sistem
+      </a>
+    </nav>
+
+    <div class="sidebar-status">
+      <div class="status-dot" id="ws-dot"></div>
+      <span id="ws-status">Menghubungkan...</span>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ───────────────────────────────────────── -->
+  <main class="main">
+    <!-- Header -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="page-title">Dashboard</h1>
+        <span id="current-time" class="topbar-time"></span>
+      </div>
+      <div class="topbar-right">
+        <div class="badge-live" id="sim-badge">● SIMULASI</div>
+        <button class="btn-clear" onclick="clearEvents()" title="Hapus semua event">🗑 Reset</button>
+      </div>
+    </header>
+
+    <!-- ── TAB: DASHBOARD ─────────────────────────────────── -->
+    <section id="tab-dashboard" class="tab-content active">
+      <!-- Stat Cards -->
+      <div class="stats-grid">
+        <div class="stat-card critical">
+          <div class="stat-icon">🔴</div>
+          <div class="stat-body">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Total Ancaman</div>
+          </div>
+        </div>
+        <div class="stat-card danger">
+          <div class="stat-icon">🚫</div>
+          <div class="stat-body">
+            <div class="stat-value" id="stat-blocked">0</div>
+            <div class="stat-label">IP Diblokir</div>
+          </div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-icon">💀</div>
+          <div class="stat-body">
+            <div class="stat-value" id="stat-critical">0</div>
+            <div class="stat-label">Kritis</div>
+          </div>
+        </div>
+        <div class="stat-card info">
+          <div class="stat-icon">🔗</div>
+          <div class="stat-body">
+            <div class="stat-value" id="stat-connections">0</div>
+            <div class="stat-label">Koneksi Aktif</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="charts-row">
+        <div class="card chart-card wide">
+          <div class="card-header">
+            <span>📈 Timeline Serangan (Real-Time)</span>
+          </div>
+          <canvas id="attackChart" height="120"></canvas>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <span>🍩 Jenis Serangan</span>
+          </div>
+          <canvas id="typeChart" height="160"></canvas>
+        </div>
+      </div>
+
+      <!-- Recent Events mini table -->
+      <div class="card">
+        <div class="card-header">
+          <span>⚡ Serangan Terbaru</span>
+          <a href="#" onclick="switchTab('events', document.getElementById('tab-btn-events'))">Lihat semua →</a>
+        </div>
+        <div id="recent-mini-table" class="event-table-wrap">
+          <table class="event-table">
+            <thead><tr>
+              <th>Waktu</th><th>IP</th><th>Negara</th><th>Serangan</th><th>Level</th><th>Aksi</th>
+            </tr></thead>
+            <tbody id="mini-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TAB: LIVE EVENTS ───────────────────────────────── -->
+    <section id="tab-events" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span>⚠️ Semua Event Serangan</span>
+          <div class="filter-row">
+            <select id="filter-severity" onchange="filterEvents()" class="select-input">
+              <option value="">Semua Level</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="event-table-wrap">
+          <table class="event-table">
+            <thead><tr>
+              <th>#</th><th>Waktu</th><th>IP Penyerang</th><th>Negara</th><th>Jenis Serangan</th><th>Detail</th><th>Level</th><th>Aksi</th>
+            </tr></thead>
+            <tbody id="events-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TAB: BLOCKED IPs ──────────────────────────────── -->
+    <section id="tab-blocked" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span>🚫 Daftar IP yang Diblokir</span>
+          <span id="blocked-count" class="badge-count">0</span>
+        </div>
+        <div class="event-table-wrap">
+          <table class="event-table">
+            <thead><tr>
+              <th>IP Address</th><th>Alasan</th><th>Diblokir Sejak</th><th>Berakhir</th><th>Aksi</th>
+            </tr></thead>
+            <tbody id="blocked-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TAB: SYSTEM ────────────────────────────────────── -->
+    <section id="tab-system" class="tab-content">
+      <div class="sys-grid">
+        <div class="card sys-card">
+          <div class="sys-label">CPU</div>
+          <div class="gauge-wrap">
+            <div class="gauge" id="cpu-gauge">
+              <div class="gauge-fill" id="cpu-fill" style="--pct:0%"></div>
+              <div class="gauge-text" id="cpu-text">0%</div>
+            </div>
+          </div>
+        </div>
+        <div class="card sys-card">
+          <div class="sys-label">RAM</div>
+          <div class="gauge-wrap">
+            <div class="gauge" id="ram-gauge">
+              <div class="gauge-fill" id="ram-fill" style="--pct:0%"></div>
+              <div class="gauge-text" id="ram-text">0%</div>
+            </div>
+          </div>
+          <div class="sys-sub" id="ram-detail">-- / -- MB</div>
+        </div>
+        <div class="card sys-card">
+          <div class="sys-label">Disk</div>
+          <div class="gauge-wrap">
+            <div class="gauge">
+              <div class="gauge-fill" id="disk-fill" style="--pct:0%"></div>
+              <div class="gauge-text" id="disk-text">0%</div>
+            </div>
+          </div>
+        </div>
+        <div class="card sys-card">
+          <div class="sys-label">Network IN</div>
+          <div class="sys-value" id="net-in">0 KB/s</div>
+        </div>
+        <div class="card sys-card">
+          <div class="sys-label">Network OUT</div>
+          <div class="sys-value" id="net-out">0 KB/s</div>
+        </div>
+        <div class="card sys-card">
+          <div class="sys-label">Koneksi Aktif</div>
+          <div class="sys-value" id="sys-connections">0</div>
+        </div>
+      </div>
+
+      <!-- Network chart -->
+      <div class="card" style="margin-top:1.5rem">
+        <div class="card-header"><span>📡 Network Traffic (Real-Time)</span></div>
+        <canvas id="networkChart" height="100"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
