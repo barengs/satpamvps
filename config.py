@@ -3,16 +3,20 @@ Configuration settings for VPS Attack Prevention & Monitoring System
 """
 import os
 import platform
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ─── System Detection ──────────────────────────────────────────────────────────
 IS_LINUX = platform.system() == "Linux"
 IS_SIMULATION = not IS_LINUX  # Simulation mode on Windows/Mac
 
 # ─── Application ───────────────────────────────────────────────────────────────
-APP_HOST = "0.0.0.0"
-APP_PORT = 5000
-APP_SECRET_KEY = "vps-sentinel-secret-2026"
-DEBUG_MODE = False
+APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
+APP_PORT = int(os.getenv("APP_PORT", "5000"))
+APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "vps-sentinel-secret-2026")
+DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() in ["true", "1", "yes"]
 
 # ─── Database ──────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
