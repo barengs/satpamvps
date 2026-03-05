@@ -7,8 +7,9 @@ import database as db
 from firewall import firewall
 from monitor import SystemMonitor
 from threat_detector import ThreatDetector
+from tarpit import tarpit
 from logger import logger
-from config import APP_HOST, APP_PORT, APP_SECRET_KEY
+from config import APP_HOST, APP_PORT, APP_SECRET_KEY, ENABLE_WEB_HONEYPOT, SEVERITY_HIGH
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = APP_SECRET_KEY
@@ -84,12 +85,76 @@ def api_clear_events():
     return jsonify({"success": True})
 
 
+# ─── Web Honeypot (Zip Bomb) ───────────────────────────────────────────────────
+# Rute-rute yang sering dicari bot (vulnerability scanner)
+HONEYPOT_ROUTES = [
+    "/wp-login.php", "/wp-admin", "/.env", "/phpmyadmin", "/mysql", "/sql",
+    "/admin", "/login.php", "/config.php", "/backup.zip", "/archive.zip"
+]
+
+@app.route("/<path:req_path>")
+def catch_all(req_path):
+    # Jika honeypot aktif dan dicari rute berbahaya
+    if ENABLE_WEB_HONEYPOT and ("/" + req_path in HONEYPOT_ROUTES or req_path.endswith(".php") or ".env" in req_path):
+        ip = request.headers.get("X-Real-IP", request.remote_addr)
+        
+        # Log ancaman
+        import datetime
+        country = detector._get_country(ip) if hasattr(detector, '_get_country') else "Unknown"
+        action = "HONEYPOT"
+        
+        event_id = db.insert_event(
+            ip, country, "HONEYPOT_CAUGHT", "Caught in Web Honeypot", 
+            SEVERITY_HIGH, f"Bot scanned for /{req_path}, returning GZIP Bomb", action
+        )
+        
+        event_data = {
+            "id": event_id,
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ip": ip, "country": country, "attack_type": "HONEYPOT_CAUGHT",
+            "attack_name": "Caught in Web Honeypot", "severity": SEVERITY_HIGH,
+            "details": f"Hit /{req_path}", "action": action
+        }
+        socketio.emit("threat_event", event_data)
+        logger.warning(f"Web Honeypot: Bot {ip} tried to access /{req_path} -> Sending GZIP Bomb")
+        
+        # Kirim Gzip Bomb (Payload 10MB byte nol terekompresi)
+        # Akan menguras memori bot yang mencoba mengekstraknya otomatis
+        import gzip
+        import io
+        
+        out = io.BytesIO()
+        with gzip.GzipFile(fileobj=out, mode="w") as f:
+            f.write(b"0" * 10_000_000)  # 10 MB of zeros, compresses very small
+            
+        from flask import make_response
+        response = make_response(out.getvalue())
+        response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Content-Length'] = str(len(out.getvalue()))
+        response.headers['Content-Type'] = 'text/html'
+        
+        # Block sekalian jika auto-block nyala di firewall
+        from config import AUTO_BLOCK
+        if AUTO_BLOCK and not db.is_ip_blocked(ip):
+            firewall.block_ip(ip)
+            db.block_ip(ip, reason="Web Honeypot Trap")
+            
+        return response, 200
+
+    # Normal 404
+    return "Not Found", 404
+
+
 # ─── App startup ──────────────────────────────────────────────────────────────
 def start_background_services():
     monitor.set_socketio(socketio)
     detector.set_socketio(socketio)
+    tarpit.socketio = socketio
+    
     monitor.start()
     detector.start()
+    tarpit.start()
+    
     logger.info("Background services started")
 
 

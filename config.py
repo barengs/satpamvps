@@ -74,4 +74,14 @@ ATTACK_TYPES = {
     "PATH_TRAVERSAL": {"name": "Path Traversal", "severity": SEVERITY_HIGH},
     "RCE_ATTEMPT": {"name": "Remote Code Execution", "severity": SEVERITY_CRITICAL},
     "SUSPICIOUS_UA": {"name": "Suspicious User Agent", "severity": SEVERITY_LOW},
+    "TARPIT_CAUGHT": {"name": "Caught in SSH Tarpit", "severity": SEVERITY_MEDIUM},
+    "HONEYPOT_CAUGHT": {"name": "Caught in Web Honeypot", "severity": SEVERITY_HIGH},
 }
+
+# ─── Countermeasures (Defense) ─────────────────────────────────────────────────
+ENABLE_SSH_TARPIT = os.getenv("ENABLE_SSH_TARPIT", "True").lower() in ["true", "1", "yes"]
+SSH_TARPIT_PORT = int(os.getenv("SSH_TARPIT_PORT", "2222"))
+SSH_TARPIT_DELAY = float(os.getenv("SSH_TARPIT_DELAY", "2.0"))
+
+ENABLE_WEB_HONEYPOT = os.getenv("ENABLE_WEB_HONEYPOT", "True").lower() in ["true", "1", "yes"]
+
